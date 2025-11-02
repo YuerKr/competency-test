@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Профиль профессиональных компетенций</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { padding:20px; background:#f4f7fb; font-family:system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;}
+    .question { background:#fff; padding:12px; margin-bottom:10px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+    .opt-label { display:block; margin-bottom:6px; }
+    .tag { font-size:0.85rem; color:#666; }
+    footer { margin-top:20px; color:#666; font-size:0.9rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>Тест — Профиль профессиональных компетенций</h2>
+  <p class="text-muted">Выберите варианты, которые лучше всего описывают вас. В конце система распределит баллы по компетенциям и покажет профиль.</p>
+
+  <form id="testForm">
+    <div class="mb-3">
+      <label class="form-label">Ваше имя (для отчёта)</label>
+      <input id="name" class="form-control" placeholder="Иван Иванов">
+    </div>
+
+    <div id="questions"></div>
+
+    <div class="mt-3">
+      <button class="btn btn-primary" type="submit">Завершить тест и посмотреть профиль</button>
+    </div>
+  </form>
+
+  <div id="report" style="display:none;" class="mt-4">
+    <h4>Профиль: <span id="repName"></span></h4>
+    <div class="row">
+      <div class="col-lg-6">
+        <canvas id="chart" height="360"></canvas>
+      </div>
+      <div class="col-lg-6">
+        <h5>Результаты</h5>
+        <ul id="resultsList" class="list-group mb-2"></ul>
+        <div id="interpretation"></div>
+        <div class="mt-3">
+          <button id="downloadJson" class="btn btn-sm btn-outline-secondary">Скачать JSON</button>
+          <button id="downloadCsv" class="btn btn-sm btn-outline-secondary">Скачать CSV</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Ваши данные защищены.</footer>
+</div>
+
+<script>
+// Компетенции
+const competencies = [
+  {key:'Ответственность', short:'Ответст.'},
+  {key:'Коммуникация', short:'Комм.'},
+  {key:'Инициативность', short:'Инициатива'},
+  {key:'Планирование', short:'Планирование'},
+  {key:'Командная работа', short:'Команда'},
+  {key:'Клиентоориентированность', short:'Клиент'},
+  {key:'Саморазвитие', short:'Развитие'}
+];
+
+// Вопросы: текст + варианты, где каждый вариант даёт очки по компетенциям (массив длины competencies)
+const questions = [
+  {q:'Что для вас важнее при выполнении задачи?', opts:[
+    {t:'Сделать быстро, даже если придётся исправлять позже', s:[1,2,1,2,1,2,1]},
+    {t:'Сделать качественно и в срок', s:[3,3,2,3,2,3,2]},
+    {t:'Сделать пример для команды и объяснить процесс', s:[4,4,3,3,4,3,3]},
+    {t:'Планировать и оптимизировать процесс заранее', s:[3,3,4,4,3,2,3]}
+  ]},
+  {q:'Как вы реагируете на незапланированные изменения в проекте?', opts:[
+    {t:'Паниковать и ждать указаний', s:[1,1,1,1,1,1,1]},
+    {t:'Адаптируюсь, но мне нужна поддержка', s:[2,2,2,2,2,2,2]},
+    {t:'Предлагаю варианты и корректирую план', s:[3,3,4,3,3,2,3]},
+    {t:'Вижу возможность улучшить процесс и действую проактивно', s:[4,3,4,3,3,3,4]}
+  ]},
+  {q:'Как вы относитесь к просьбам коллег о помощи?', opts:[
+    {t:'Чаще отказываю — у меня свои задачи', s:[1,2,1,1,1,1,1]},
+    {t:'Помогаю, если это укладывается в мой график', s:[3,3,2,3,3,2,2]},
+    {t:'Активно помогаю и учу коллег', s:[4,4,3,3,4,3,3]},
+    {t:'Организую совместную работу и распределяю роли', s:[3,4,4,3,4,2,3]}
+  ]},
+  {q:'Что вы делаете, когда видите ошибку в процессе?', opts:[
+    {t:'Игнорирую, если это не моя зона', s:[1,1,1,1,1,1,1]},
+    {t:'Исправляю и говорю коллегам', s:[3,3,2,2,3,2,2]},
+    {t:'Предлагаю корректировку процесса и документирую', s:[4,3,3,3,3,2,3]},
+    {t:'Инициирую обсуждение и план по улучшению', s:[4,3,4,4,3,3,4]}
+  ]},
+  {q:'Как вы планируете рабочий день?', opts:[
+    {t:'Я плыву по течению', s:[1,1,1,1,1,1,1]},
+    {t:'Есть общий план, но часто корректирую', s:[2,2,2,2,2,2,2]},
+    {t:'Делю задачи по приоритетам и времени', s:[3,2,3,4,2,2,3]},
+    {t:'Ставлю цели, дедлайны и буферы на риски', s:[3,2,3,4,2,2,3]}
+  ]},
+  {q:'Как вы воспринимаете обратную связь?', opts:[
+    {t:'Защищаюсь и редко учитываю', s:[1,1,1,1,1,1,1]},
+    {t:'Слушаю, но не всегда действую', s:[2,2,2,2,2,2,2]},
+    {t:'Принимаю и пытаюсь улучшить работу', s:[3,3,3,3,3,2,3]},
+    {t:'Ищу идеи, внедряю и делюсь результатом', s:[4,3,4,3,3,2,4]}
+  ]},
+  {q:'Что вы предпочитаете в рабочем общении?', opts:[
+    {t:'Писать чёткие инструкции и не обсуждать', s:[2,3,2,3,2,2,2]},
+    {t:'Короткие ясные обсуждения', s:[3,3,2,2,3,2,2]},
+    {t:'Детальные обсуждения и синхронизации', s:[3,4,3,3,4,2,3]},
+    {t:'Инициировать встречи для улучшения работы', s:[3,4,4,3,4,3,3]}
+  ]},
+  {q:'Как вы относитесь к клиентским просьбам, противоречащим внутренним правилам?', opts:[
+    {t:'Отказываю — правила важнее', s:[2,2,1,2,1,1,1]},
+    {t:'Ищу компромисс, не нарушая правил', s:[3,3,2,3,2,3,2]},
+    {t:'Предлагаю альтернативные решения клиенту', s:[3,3,3,2,3,4,2]},
+    {t:'Активно улучшая, стараюсь учесть клиента и процессы', s:[4,3,3,3,3,4,3]}
+  ]},
+  {q:'Как вы развиваете профессиональные навыки?', opts:[
+    {t:'Не уделяю времени', s:[1,1,1,1,1,1,1]},
+    {t:'Читаю время от времени', s:[2,2,2,2,2,2,2]},
+    {t:'Прохожу курсы и применяю знания', s:[3,2,2,2,2,2,4]},
+    {t:'Планирую развитие и делюсь знаниями в команде', s:[3,3,3,3,3,2,4]}
+  ]},
+  {q:'Если проект задерживается, что вы делаете?', opts:[
+    {t:'Жду указаний от руководителя', s:[1,1,1,1,1,1,1]},
+    {t:'Делаю свою часть и говорю о задержке', s:[2,2,2,2,2,2,2]},
+    {t:'Предлагаю перераспределение задач', s:[3,3,3,3,3,2,3]},
+    {t:'Инициирую план восстановления и беру ответственность', s:[4,3,3,4,3,3,3]}
+  ]},
+  {q:'Как вы ведёте себя в конфликтной ситуации в команде?', opts:[
+    {t:'Избегаю конфликта', s:[1,1,1,1,1,1,1]},
+    {t:'Поддерживаю свою точку зрения, стараюсь мирно', s:[2,2,2,2,2,2,2]},
+    {t:'Нахожу компромиссный вариант', s:[3,3,3,3,3,2,3]},
+    {t:'Помогаю выстроить правила взаимодействия', s:[4,4,3,3,4,2,3]}
+  ]},
+  {q:'Как часто вы предлагаете улучшения в работе?', opts:[
+    {t:'Редко или никогда', s:[1,1,1,1,1,1,1]},
+    {t:'Иногда, если есть время', s:[2,2,2,2,2,2,2]},
+    {t:'Регулярно предлагаю небольшие улучшения', s:[3,3,3,3,3,2,3]},
+    {t:'Постоянно ищу и внедряю улучшения', s:[4,3,4,3,3,2,4]}
+  ]},
+  {q:'Что важнее для вас при выборе рабочего задания?', opts:[
+    {t:'Высокая оплата', s:[1,1,1,1,1,1,1]},
+    {t:'Удобный график', s:[2,1,2,2,1,1,2]},
+    {t:'Возможность учиться', s:[2,2,2,2,2,2,4]},
+    {t:'Влияние на результат компании', s:[3,3,3,3,3,3,3]}
+  ]},
+  {q:'Как вы оцениваете свою роль в команде?', opts:[
+    {t:'Исполнитель — делаю то, что скажут', s:[2,2,1,2,1,1,1]},
+    {t:'Надёжный член команды', s:[3,3,2,3,3,2,2]},
+    {t:'Ведущий по части задач', s:[4,3,3,3,4,2,3]},
+    {t:'Организатор/координатор', s:[4,4,4,4,4,3,3]}
+  ]},
+  {q:'Как вы относитесь к переработкам ради дедлайна?', opts:[
+    {t:'Никогда не перерабатываю', s:[2,2,1,1,2,1,1]},
+    {t:'Иногда, в критичных ситуациях', s:[3,3,2,2,3,2,2]},
+    {t:'Готов, если это полезно команде', s:[3,3,3,3,3,2,2]},
+    {t:'Часто вхожу в режим высокой нагрузки', s:[2,2,3,2,2,1,2]}
+  ]},
+  {q:'Что вы делаете, чтобы клиент остался доволен?', opts:[
+    {t:'Следую инструкции и не отклоняюсь', s:[2,2,1,2,1,2,1]},
+    {t:'Уточняю требования и информирую клиента', s:[3,3,2,2,2,3,2]},
+    {t:'Предлагаю варианты и адаптируюся под клиента', s:[3,3,3,2,3,4,2]},
+    {t:'Стремлюсь превзойти ожидания клиента', s:[4,3,3,2,3,4,3]}
+  ]},
+  {q:'Как вы учитесь новому для работы?', opts:[
+    {t:'Случайно и редко', s:[1,1,1,1,1,1,1]},
+    {t:'По запросу проекта', s:[2,2,2,2,2,2,2]},
+    {t:'Планирую обучение и применяю', s:[3,2,2,2,2,2,4]},
+    {t:'Ищу знания регулярно и делюсь с командой', s:[3,3,3,3,3,2,4]}
+  ]},
+  {q:'Когда вам дают непонятную задачу, вы:', opts:[
+    {t:'Жду разъяснений', s:[1,1,1,1,1,1,1]},
+    {t:'Пытаюсь решить сам, затем спрашиваю', s:[3,2,3,2,2,2,3]},
+    {t:'Разбиваю задачу и планирую шаги', s:[3,2,4,4,2,2,3]},
+    {t:'Организую обсуждение и распределяю задачи', s:[3,3,4,3,4,2,3]}
+  ]}
+];
+
+// Рендер
+const qArea = document.getElementById('questions');
+questions.forEach((item, qi)=>{
+  const div = document.createElement('div');
+  div.className = 'question';
+  div.innerHTML = `<h6>${qi+1}. ${item.q}</h6><div class="mt-2" id="opts-${qi}"></div>`;
+  qArea.appendChild(div);
+  const optsDiv = div.querySelector('#opts-'+qi);
+  item.opts.forEach((o,oi)=>{
+    const id = `q${qi}_o${oi}`;
+    const radio = document.createElement('input');
+    radio.type = 'radio'; radio.name = `q${qi}`; radio.id = id; radio.value = oi; if(oi===2) radio.checked = true;
+    radio.className = 'btn-check';
+    const label = document.createElement('label');
+    label.htmlFor = id; label.className = 'btn btn-outline-primary opt-label w-100';
+    label.innerText = o.t;
+    optsDiv.appendChild(radio); optsDiv.appendChild(label);
+  });
+});
+
+function computeScores() {
+  // initialize
+  const scores = competencies.map(()=>0);
+  const maxPerQ = questions.map(q=> Math.max(...q.opts.map(o=> o.s.reduce((a,b)=>a+b,0))) ); // not used directly
+  questions.forEach((q,qi)=>{
+    const chosen = document.querySelector(`input[name="q${qi}"]:checked`);
+    const idx = chosen ? Number(chosen.value) : 0;
+    const weights = q.opts[idx].s;
+    weights.forEach((w,i)=> scores[i]+=w);
+  });
+  return scores;
+}
+
+document.getElementById('testForm').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const name = document.getElementById('name').value.trim() || 'Без имени';
+  const scores = computeScores();
+  // compute max possible per competency (if choose best variant each question)
+  const maxScores = competencies.map((c,ci)=>{
+    let m = 0;
+    questions.forEach(q=>{
+      const best = Math.max(...q.opts.map(o=>o.s[ci]));
+      m += best;
+    });
+    return m;
+  });
+  const total = scores.reduce((a,b)=>a+b,0);
+  const maxTotal = maxScores.reduce((a,b)=>a+b,0);
+
+  const submission = {name, scores, maxScores, total, maxTotal, time: new Date().toISOString(), competencies};
+
+  showReport(submission);
+});
+
+let chart = null;
+function showReport(sub) {
+  document.getElementById('repName').innerText = sub.name;
+  const labels = sub.competencies.map(c=>c.key);
+  const dataVals = sub.scores;
+  if(chart) chart.destroy();
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'Баллы', data: dataVals, barThickness:22, borderRadius:6 }] },
+    options:{ indexAxis:'y', scales:{ x:{ beginAtZero:true } }, plugins:{ legend:{ display:false } } }
+  });
+
+  const list = document.getElementById('resultsList');
+  list.innerHTML = '';
+  sub.competencies.forEach((c,ci)=>{
+    const score = sub.scores[ci];
+    const max = sub.maxScores[ci];
+    const pct = Math.round(score/max*100);
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+    li.innerHTML = `<div><strong>${c.key}</strong><div class="tag">Баллы: ${score} из ${max} (${pct}%)</div></div>`;
+    list.appendChild(li);
+  });
+
+  // Интерпретация
+  const interp = document.getElementById('interpretation');
+  interp.innerHTML = '<h5 class="mt-3">Короткая интерпретация</h5>';
+  sub.competencies.forEach((c,ci)=>{
+    const score = sub.scores[ci];
+    const max = sub.maxScores[ci];
+    const pct = Math.round(score/max*100);
+    let text = '';
+    if(pct>=75) text = 'Сильная сторона — продолжайте использовать и делиться опытом.';
+    else if(pct>=45) text = 'Средний уровень — есть база, рекомендовано развитие через практику.';
+    else text = 'Требует развития — рекомендовано обучение и менторская поддержка.';
+    const sug = suggestions(c.key, pct);
+    interp.innerHTML += `<div class="mb-2"><strong>${c.key}:</strong> ${text} <div class="tag">Рекомендация: ${sug}</div></div>`;
+  });
+
+  document.getElementById('report').style.display = 'block';
+
+  document.getElementById('downloadJson').onclick = ()=> downloadJSON(sub);
+  document.getElementById('downloadCsv').onclick = ()=> downloadCSV(sub);
+}
+
+function suggestions(key, pct) {
+  const map = {
+    'Ответственность':'Показывайте примеры выполнения задач, используйте чек-листы и ретроспективы.',
+    'Коммуникация':'Практикуйте 1-on-1 и эмпатичное слушание; делайте короткие отчёты.',
+    'Инициативность':'Начинайте с малых экспериментов и предлагайте пилоты.',
+    'Планирование':'Применяйте технику планирования (WBS, timeboxing) и ретроспективы.',
+    'Командная работа':'Развивайте навыки коллегиальной поддержки и ясной делегировки.',
+    'Клиентоориентированность':'Собирайте фидбек от клиентов и делайте A/B улучшения сервиса.',
+    'Саморазвитие':'Планируйте обучение, ставьте SMART-цели и делитесь знаниями.'
+  };
+  return map[key] || 'Практика и обратная связь.';
+}
+
+function downloadJSON(obj) {
+  const blob = new Blob([JSON.stringify(obj,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=(obj.name||'profile')+'_profile.json'; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCSV(obj) {
+  const rows = [['Компетенция','Баллы','Макс','%']];
+  obj.competencies.forEach((c,ci)=> rows.push([c.key, obj.scores[ci], obj.maxScores[ci], Math.round(obj.scores[ci]/obj.maxScores[ci]*100)+'%']));
+  rows.push(['Итог', obj.total, obj.maxTotal, Math.round(obj.total/obj.maxTotal*100)+'%']);
+  const csv = rows.map(r=> r.map(cell=> `"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=(obj.name||'profile')+'_profile.csv'; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
